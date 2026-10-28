@@ -165,10 +165,27 @@ jobs:
             'native/linux-x86_64/libwirehairjni.so' \
             target/jar-contents.txt
 
+
+      # 检查三个 JAR 是否都已生成
+      - name: 检查构建产物
+        shell: bash
+        run: |
+          set -eux
+
+          ls -lh target/
+
+          test -s target/wirehair-jni-1.0.0.jar
+          test -s target/wirehair-jni-1.0.0-sources.jar
+          test -s target/wirehair-jni-1.0.0-javadoc.jar
+
+      # 一次上传主 JAR、源码 JAR 和 Javadoc JAR
       - name: 上传最终 JAR
         uses: actions/upload-artifact@v4
         with:
-          name: wirehair-jni-jar
-          path: target/wirehair-jni-1.0.0.jar
+          name: wirehair-jni-1.0.0
+          path: |
+            target/wirehair-jni-1.0.0.jar
+            target/wirehair-jni-1.0.0-sources.jar
+            target/wirehair-jni-1.0.0-javadoc.jar
           if-no-files-found: error
           retention-days: 30
