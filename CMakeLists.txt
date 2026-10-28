@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
+
 project(wirehair-java-benchmark LANGUAGES CXX)
 
 if(NOT WIREHAIR_SOURCE_DIR)
@@ -13,7 +14,6 @@ set(WIREHAIR_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(WIREHAIR_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
 
 add_subdirectory("${WIREHAIR_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/wirehair")
-
 find_package(JNI REQUIRED)
 
 add_library(wirehairjni SHARED
@@ -32,3 +32,10 @@ set_target_properties(wirehairjni PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
 )
+
+if(WIN32)
+    target_compile_definitions(wirehairjni PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(wirehairjni PRIVATE Psapi)
+elseif(UNIX AND NOT APPLE)
+    # Linux: process memory statistics are read from /proc/self/status.
+endif()

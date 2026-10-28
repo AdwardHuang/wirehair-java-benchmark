@@ -1,219 +1,53 @@
-# Wirehair JNI Benchmark v3
+# Wirehair JNI Benchmark v4 (Windows + Linux)
 
-这是一个**独立的 Wirehair + Java JNI 内存/性能 Benchmark**。
+这是一个独立的 Wirehair + Java JNI 内存/性能 Benchmark，支持 Windows x64 和 Linux x86-64。Java 目标版本为 JDK 17；Wirehair 源码在构建时从官方仓库 `https://github.com/catid/wirehair` 获取。
 
-当前版本专门针对：
+## 项目结构
 
-- Windows
-- GitHub Actions
-- Visual Studio 2022 / MSVC
-- JDK 17
-- 官方 Wirehair
-- 26 MiB synthetic data
-- block size = 2500 bytes
-- 约 10% systematic block 丢失
-- repair block 连续发送
-- Windows Working Set / Peak Working Set 采样
-- SHA-256 + byte-for-byte 验证
+- `src/main/java/com/hrz/wirehairbench/Benchmark.java`：Java 基准测试、丢包模拟、SHA-256 与逐字节验证。
+- `src/main/java/com/hrz/wirehairbench/WirehairNative.java`：统一 JNI API 和动态库加载。
+- `src/main/cpp/wirehair_jni.cpp`：跨平台 JNI 实现。
+- `CMakeLists.txt`：统一 CMake 构建；Windows 定义 `NOMINMAX` 并链接 Psapi，Linux 从 `/proc/self/status` 读取 RSS / HWM。
+- `.github/workflows/build-windows.yml`：Windows GitHub Actions。
+- `.github/workflows/build-linux.yml`：Linux GitHub Actions。
 
-## 1. 本地不需要安装 Visual Studio
+## GitHub Actions
 
-推荐直接上传整个项目到 GitHub。
+进入仓库的 **Actions**，选择 `Wirehair JNI Benchmark - Windows` 或 `Wirehair JNI Benchmark - Linux`，点击 **Run workflow**。可配置：
 
-Workflow：
+- `message_mb`：输入数据大小 MiB，默认 26。
+- `block_bytes`：Wirehair block 大小，默认 2500。
+- `repair_limit`：repair 包数量，默认 2000。
+- `loss_every`：每 N 个 systematic block 丢弃一个；0 表示不丢包，默认 10。
 
-`.github/workflows/build-windows.yml`
+push 和 pull request 也会触发默认参数构建及运行。
 
-使用：
+## Windows 本地构建
 
-```text
-runs-on: windows-2022
+需要 JDK 17、Maven、Git、CMake、Visual Studio 2022 C++ Build Tools：
+
+```bat
+build-windows.bat
+run-windows.bat
 ```
 
-GitHub-hosted Windows Runner 自带 Visual Studio / MSVC / CMake。
+## Linux 本地构建
 
-## 2. GitHub Actions 运行
+需要 JDK 17、Maven、Git、CMake、Ninja、C++ 编译器。Ubuntu/Debian 可安装：
 
-进入：
-
-```text
-GitHub 仓库
-→ Actions
-→ Wirehair JNI Benchmark
-→ Run workflow
+```bash
+sudo apt-get update
+sudo apt-get install -y openjdk-17-jdk maven git cmake ninja-build build-essential
+./build-linux.sh
+java -Dwirehairjni.path="$PWD/build/native/libwirehairjni.so" \
+  -cp target/wirehair-java-benchmark-1.0.0.jar \
+  com.hrz.wirehairbench.Benchmark 26 2500 2000 10
 ```
 
-可以修改：
+## 输出说明
 
-```text
-message_mb
-block_bytes
-repair_limit
-loss_every
-```
+程序打印各阶段的当前内存和峰值内存，以及编码/恢复时间、输入和恢复数据的 SHA-256，最后进行逐字节比较。Windows 内存值使用 Working Set / Peak Working Set；Linux 使用 `/proc/self/status` 中的 `VmRSS` / `VmHWM`。两者都是进程驻留内存的近似观测值，操作系统的统计语义不完全相同，跨平台比较时应关注趋势，不应把微小差异视为严格等价。
 
-默认：
+## 注意事项
 
-```text
-message_mb   = 26
-block_bytes  = 2500
-repair_limit = 2000
-loss_every   = 10
-```
-
-## 3. Benchmark 输出
-
-重点观察：
-
-```text
-MEM start
-MEM after input + reusable buffers
-MEM after encoder create
-MEM after decoder create
-MEM after systematic
-MEM after repair 1
-MEM after repair 100
-MEM after repair 200
-...
-MEM after repair phase
-MEM after recover
-MEM after free + GC
-```
-
-例如重点比较：
-
-```text
-after input + reusable buffers
-        ↓
-after encoder create
-```
-
-这部分可以观察 Wirehair Encoder 初始化是否产生明显 native memory 增长。
-
-然后比较：
-
-```text
-after encoder create
-        ↓
-after first repair
-```
-
-以及：
-
-```text
-repair 100
-repair 200
-...
-```
-
-观察 Repair 过程是否继续扩大 Working Set。
-
-## 4. 参数格式
-
-命令行：
-
-```text
-Benchmark <messageMB> <blockBytes> <repairLimit> <lossEvery>
-```
-
-例如：
-
-```text
-Benchmark 26 2500 2000 10
-```
-
-或者：
-
-```text
-Benchmark 50 2500 3000 10
-```
-
-## 5. 当前设计的重要说明
-
-为了尽量减少 Java GC 对实验结果的干扰：
-
-- 输入数据只创建一个 `byte[]`
-- QR/packet buffer 只创建一个可复用 `byte[]`
-- recovered 只创建一个 `byte[]`
-- Wirehair Encoder 的 native context 自己保存一份 input
-- Encoder / Decoder 生命周期在 benchmark 中明确控制
-
-当前**没有调用**：
-
-```cpp
-wirehair_encoder_detach_input()
-```
-
-原因是第一轮测试需要观察 Wirehair 原始 Encoder 的完整内存占用。
-
-后续如果第一轮结果正常，再增加 detach-input 对照实验。
-
-## 6. 重要
-
-这个版本的目标是：
-
-> 先回答 Wirehair 在 26 MiB / 2500-byte block 场景下到底需要多少内存。
-
-暂时：
-
-- 不接 QOcr
-- 不接 libcimbar
-- 不接二维码
-- 不接 ZXing
-- 不做 GUI
-- 不做文件读取
-- 不做网络传输
-
-先把 Fountain Code 本身的内存行为测清楚。
-
-## 7. Benchmark 结果如何判断
-
-重点不是只看最终：
-
-```text
-MEM after free + GC
-```
-
-因为 Windows CRT / JVM / allocator 可能不会立即把已经释放的内存还给操作系统。
-
-重点看：
-
-```text
-Peak Working Set
-```
-
-以及不同阶段的：
-
-```text
-Current Working Set
-```
-
-尤其是：
-
-```text
-after input
-after encoder create
-after decoder create
-after systematic
-after first repair
-after repair phase
-after recover
-```
-
-如果 Wirehair 在这个场景下只有几百 MB，而 OpenRQ 达到约 1.3 GB，那么就非常有价值：
-
-> 可以基本确认 QOcr 当前的大内存峰值并不是 Fountain Code 本身必然如此，而更可能与 OpenRQ 的具体实现/矩阵数据结构有关。
-
-如果 Wirehair 同样出现非常高的峰值，再进一步分析 Wirehair 的 recovery matrix / block 数量 / block size 参数。
-
-## 8. 注意
-
-当前 JNI 是为了 Benchmark 编写的最小实现，不是生产级 Java Wirehair Binding。
-
-Benchmark 第一阶段优先保证：
-
-1. 编译简单
-2. native 内存可观察
-3. 输入可重复
-4. 参数可调整
-5. 恢复结果可验证
+这是用于研究 Wirehair 内存行为的最小 JNI Benchmark，不是生产级 Java Wirehair Binding；目前只针对常见 Windows x64 与 Linux x86-64 工作流。原生库需要与 JVM 的操作系统和 CPU 架构一致。由于运行环境无法访问 GitHub 并执行原生构建，本次打包未能实际运行 Windows/Linux CI 验证；首次运行工作流后应依据实际 Wirehair 版本的 API/编译日志继续校准。

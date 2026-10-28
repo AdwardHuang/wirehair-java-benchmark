@@ -1,0 +1,73 @@
+name: Wirehair JNI Benchmark - Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      message_mb:
+        description: Synthetic message size in MiB
+        required: true
+        default: "26"
+      block_bytes:
+        description: Wirehair block size in bytes
+        required: true
+        default: "2500"
+      repair_limit:
+        description: Maximum repair blocks to send
+        required: true
+        default: "2000"
+      loss_every:
+        description: Drop every Nth systematic block; 0 means no loss
+        required: true
+        default: "10"
+  push:
+  pull_request:
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout benchmark
+        uses: actions/checkout@v4
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Install native build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build
+      - name: Clone Wirehair
+        run: git clone --depth 1 https://github.com/catid/wirehair.git wirehair-src
+      - name: Configure native build
+        run: >-
+          cmake -S . -B build/native -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DWIREHAIR_SOURCE_DIR="${GITHUB_WORKSPACE}/wirehair-src"
+      - name: Build native JNI
+        run: cmake --build build/native --parallel
+      - name: Build Java benchmark
+        run: mvn -B package -DskipTests
+      - name: Run benchmark
+        env:
+          MESSAGE_MB: ${{ github.event.inputs.message_mb || '26' }}
+          BLOCK_BYTES: ${{ github.event.inputs.block_bytes || '2500' }}
+          REPAIR_LIMIT: ${{ github.event.inputs.repair_limit || '2000' }}
+          LOSS_EVERY: ${{ github.event.inputs.loss_every || '10' }}
+        run: |
+          java -Djava.library.path="${GITHUB_WORKSPACE}/build/native" \
+            -Dwirehairjni.path="${GITHUB_WORKSPACE}/build/native/libwirehairjni.so" \
+            -cp target/wirehair-java-benchmark-1.0.0.jar \
+            com.hrz.wirehairbench.Benchmark \
+            "$MESSAGE_MB" "$BLOCK_BYTES" "$REPAIR_LIMIT" "$LOSS_EVERY"
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wirehair-jni-benchmark-linux-x86_64
+          path: |
+            build/native/libwirehairjni.so
+            target/wirehair-java-benchmark-1.0.0.jar
+          if-no-files-found: warn
+          retention-days: 14

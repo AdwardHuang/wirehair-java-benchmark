@@ -1,40 +1,39 @@
-name: Wirehair JNI Benchmark
+name: Wirehair JNI Benchmark - Windows
 
 on:
   workflow_dispatch:
     inputs:
       message_mb:
-        description: "Synthetic message size in MiB"
+        description: Synthetic message size in MiB
         required: true
         default: "26"
       block_bytes:
-        description: "Wirehair block size in bytes"
+        description: Wirehair block size in bytes
         required: true
         default: "2500"
       repair_limit:
-        description: "Maximum repair blocks to send"
+        description: Maximum repair blocks to send
         required: true
         default: "2000"
       loss_every:
-        description: "Drop every Nth systematic block; 0 = no loss"
+        description: Drop every Nth systematic block; 0 means no loss
         required: true
         default: "10"
+  push:
+  pull_request:
 
 jobs:
   build-and-run:
     runs-on: windows-2022
-
     steps:
       - name: Checkout benchmark
         uses: actions/checkout@v4
-
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
           cache: maven
-
       - name: Show toolchain
         shell: cmd
         run: |
@@ -43,49 +42,27 @@ jobs:
           cmake --version
           git --version
           where cl
-
       - name: Clone Wirehair
         shell: cmd
-        run: |
-          git clone --depth 1 https://github.com/catid/wirehair.git wirehair-src
-          if not exist wirehair-src\CMakeLists.txt exit /b 1
-
+        run: git clone --depth 1 https://github.com/catid/wirehair.git wirehair-src
       - name: Configure native build
         shell: cmd
-        run: |
-          cmake -S . -B build\native -G "Visual Studio 17 2022" -A x64 ^
-            -DWIREHAIR_SOURCE_DIR="%CD%\wirehair-src"
-
+        run: cmake -S . -B build\native -G "Visual Studio 17 2022" -A x64 -DWIREHAIR_SOURCE_DIR="%CD%\wirehair-src"
       - name: Build native JNI
         shell: cmd
-        run: |
-          cmake --build build\native --config Release --parallel
-
+        run: cmake --build build\native --config Release --parallel
       - name: Build Java benchmark
-        shell: cmd
-        run: |
-          mvn -B package -DskipTests
-
+        run: mvn -B package -DskipTests
       - name: Run benchmark
-        env:
-          MESSAGE_MB: ${{ github.event.inputs.message_mb }}
-          BLOCK_BYTES: ${{ github.event.inputs.block_bytes }}
-          REPAIR_LIMIT: ${{ github.event.inputs.repair_limit }}
-          LOSS_EVERY: ${{ github.event.inputs.loss_every }}
         shell: cmd
+        env:
+          MESSAGE_MB: ${{ github.event.inputs.message_mb || '26' }}
+          BLOCK_BYTES: ${{ github.event.inputs.block_bytes || '2500' }}
+          REPAIR_LIMIT: ${{ github.event.inputs.repair_limit || '2000' }}
+          LOSS_EVERY: ${{ github.event.inputs.loss_every || '10' }}
         run: |
-          if not exist "build\native\Release\wirehairjni.dll" (
-            echo wirehairjni.dll not found
-            dir /s /b build\native\*.dll
-            exit /b 1
-          )
-
-          java -Dwirehairjni.path="%CD%\build\native\Release\wirehairjni.dll" ^
-            -cp "target\wirehair-java-benchmark-1.0.0.jar" ^
-            com.hrz.wirehairbench.Benchmark ^
-            %MESSAGE_MB% %BLOCK_BYTES% %REPAIR_LIMIT% %LOSS_EVERY%
-
-      - name: Upload benchmark artifacts
+          java -Dwirehairjni.path="%CD%\build\native\Release\wirehairjni.dll" -cp "target\wirehair-java-benchmark-1.0.0.jar" com.hrz.wirehairbench.Benchmark %MESSAGE_MB% %BLOCK_BYTES% %REPAIR_LIMIT% %LOSS_EVERY%
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -93,6 +70,5 @@ jobs:
           path: |
             build/native/Release/wirehairjni.dll
             target/wirehair-java-benchmark-1.0.0.jar
-            target/classes/**/*.class
           if-no-files-found: warn
           retention-days: 14
