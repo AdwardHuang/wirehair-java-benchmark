@@ -67,7 +67,6 @@ jobs:
           mvn -B package -DskipTests
 
       - name: Run benchmark
-        shell: cmd
         env:
           MESSAGE_MB: ${{ github.event.inputs.message_mb }}
           BLOCK_BYTES: ${{ github.event.inputs.block_bytes }}
