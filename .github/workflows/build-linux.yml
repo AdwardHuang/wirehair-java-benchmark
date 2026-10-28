@@ -58,7 +58,7 @@ jobs:
         run: |
           java -Djava.library.path="${GITHUB_WORKSPACE}/build/native" \
             -Dwirehairjni.path="${GITHUB_WORKSPACE}/build/native/libwirehairjni.so" \
-            -cp target/wirehair-java-benchmark-1.0.0.jar \
+            -cp target/wirehair-jni-1.0.0.jar \
             com.hrz.wirehairbench.Benchmark \
             "$MESSAGE_MB" "$BLOCK_BYTES" "$REPAIR_LIMIT" "$LOSS_EVERY"
       - name: Upload artifacts
@@ -68,6 +68,6 @@ jobs:
           name: wirehair-jni-benchmark-linux-x86_64
           path: |
             build/native/libwirehairjni.so
-            target/wirehair-java-benchmark-1.0.0.jar
+            target/wirehair-jni-1.0.0.jar
           if-no-files-found: warn
           retention-days: 14

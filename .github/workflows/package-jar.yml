@@ -1,0 +1,98 @@
+name: Build Wirehair JNI multi-platform JAR
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows-x86_64
+            file: wirehairjni.dll
+            generator: "Visual Studio 17 2022"
+          - os: ubuntu-22.04
+            platform: linux-x86_64
+            file: libwirehairjni.so
+            generator: Ninja
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Linux build tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build
+      - name: Get Wirehair source
+        run: git clone --depth 1 https://github.com/catid/wirehair.git wirehair-src
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake -S . -B build/native -G "Visual Studio 17 2022" -A x64 -DWIREHAIR_SOURCE_DIR="$PWD/wirehair-src"
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release -DWIREHAIR_SOURCE_DIR="${GITHUB_WORKSPACE}/wirehair-src"
+      - name: Build native library
+        run: cmake --build build/native --config Release --parallel
+      - name: Stage native library (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "native/${{ matrix.platform }}" | Out-Null
+          Copy-Item "build/native/Release/${{ matrix.file }}" "native/${{ matrix.platform }}/${{ matrix.file }}"
+      - name: Stage native library (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p "native/${{ matrix.platform }}"
+          cp "build/native/${{ matrix.file }}" "native/${{ matrix.platform }}/${{ matrix.file }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.platform }}
+          path: native/${{ matrix.platform }}/${{ matrix.file }}
+          if-no-files-found: error
+          retention-days: 7
+
+  package:
+    needs: native
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Download both native libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: src/main/resources/native
+          merge-multiple: true
+      - name: Verify native resources
+        run: |
+          test -s src/main/resources/native/windows-x86_64/wirehairjni.dll
+          test -s src/main/resources/native/linux-x86_64/libwirehairjni.so
+          find src/main/resources/native -type f -maxdepth 3 -print
+      - name: Build JAR, sources and Javadocs
+        run: mvn --batch-mode --no-transfer-progress clean package
+      - name: Verify native binaries are embedded in JAR
+        run: |
+          jar tf target/wirehair-jni-1.0.0.jar | grep -E '^native/(windows-x86_64/wirehairjni\.dll|linux-x86_64/libwirehairjni\.so)$'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wirehair-jni-jar
+          path: |
+            target/wirehair-jni-1.0.0.jar
+            target/wirehair-jni-1.0.0-sources.jar
+            target/wirehair-jni-1.0.0-javadoc.jar
+          if-no-files-found: error
+          retention-days: 30

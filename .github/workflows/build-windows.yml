@@ -61,7 +61,7 @@ jobs:
           REPAIR_LIMIT: ${{ github.event.inputs.repair_limit || '2000' }}
           LOSS_EVERY: ${{ github.event.inputs.loss_every || '10' }}
         run: |
-          java -Dwirehairjni.path="%CD%\build\native\Release\wirehairjni.dll" -cp "target\wirehair-java-benchmark-1.0.0.jar" com.hrz.wirehairbench.Benchmark %MESSAGE_MB% %BLOCK_BYTES% %REPAIR_LIMIT% %LOSS_EVERY%
+          java -Dwirehairjni.path="%CD%\build\native\Release\wirehairjni.dll" -cp "target\wirehair-jni-1.0.0.jar" com.hrz.wirehairbench.Benchmark %MESSAGE_MB% %BLOCK_BYTES% %REPAIR_LIMIT% %LOSS_EVERY%
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -69,6 +69,6 @@ jobs:
           name: wirehair-jni-benchmark-windows
           path: |
             build/native/Release/wirehairjni.dll
-            target/wirehair-java-benchmark-1.0.0.jar
+            target/wirehair-jni-1.0.0.jar
           if-no-files-found: warn
           retention-days: 14

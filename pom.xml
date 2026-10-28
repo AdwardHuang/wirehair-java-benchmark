@@ -4,8 +4,10 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.hrz</groupId>
-    <artifactId>wirehair-java-benchmark</artifactId>
+    <artifactId>wirehair-jni</artifactId>
     <version>1.0.0</version>
+    <name>Wirehair JNI</name>
+    <description>Java API for Wirehair fountain-code encoding and decoding, with bundled Windows/Linux native libraries.</description>
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -23,8 +25,23 @@
                 <artifactId>maven-jar-plugin</artifactId>
                 <version>3.4.2</version>
                 <configuration>
-                    <archive><manifest><mainClass>com.hrz.wirehairbench.Benchmark</mainClass></manifest></archive>
+                    <archive>
+                        <manifest><mainClass>com.hrz.wirehairbench.Benchmark</mainClass></manifest>
+                    </archive>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions><execution><id>attach-sources</id><goals><goal>jar-no-fork</goal></goals></execution></executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>3.11.2</version>
+                <configuration><doclint>none</doclint></configuration>
+                <executions><execution><id>attach-javadocs</id><goals><goal>jar</goal></goals></execution></executions>
             </plugin>
         </plugins>
     </build>
