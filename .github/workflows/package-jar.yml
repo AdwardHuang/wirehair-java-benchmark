@@ -35,6 +35,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: 安装 Linux 构建工具
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build docker.io
+
       - name: 下载官方 Wirehair 源码
         run: git clone --depth 1 https://github.com/catid/wirehair.git wirehair-src
 
@@ -47,40 +53,43 @@ jobs:
             -A x64 `
             -DWIREHAIR_SOURCE_DIR="$PWD/wirehair-src"
 
-      - name: 配置 Linux 原生工程
+      - name: 配置并编译 Linux 原生工程
         if: runner.os == 'Linux'
         run: |
-          cmake -S src/main/cpp -B build/native \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DWIREHAIR_SOURCE_DIR="${GITHUB_WORKSPACE}/wirehair-src"
+          set -eux
 
-      - name: 编译 Windows JNI 原生库
-        if: runner.os == 'Windows'
-        run: cmake --build build/native --config Release --parallel
-
-      - name: 在 Ubuntu 20.04 容器中编译 Linux JNI 原生库
-        if: runner.os == 'Linux'
-        run: |
           docker run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace \
             ubuntu:20.04 \
             bash -euxc '
+              export DEBIAN_FRONTEND=noninteractive
+
               apt-get update
-              DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                build-essential cmake ninja-build
+              apt-get install -y \
+                build-essential \
+                cmake \
+                ninja-build \
+                python3-pip \
+                binutils \
+                file
+
+              python3 -m pip install "cmake==3.31.6"
 
               ldd --version
               getconf GNU_LIBC_VERSION
 
-              cmake -S src/main/cpp -B build/native \
+              cmake -S src/main/cpp -B build/linux-container \
                 -G Ninja \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DWIREHAIR_SOURCE_DIR=/workspace/wirehair-src
 
-              cmake --build build/native --parallel
+              cmake --build build/linux-container --parallel
             '
+
+      - name: 编译 Windows JNI 原生库
+        if: runner.os == 'Windows'
+        run: cmake --build build/native --config Release --parallel
 
       - name: 整理 Windows 原生库
         if: runner.os == 'Windows'
@@ -105,17 +114,59 @@ jobs:
             exit 1
           }
 
+      - name: 检查 Linux 原生库 GLIBC 版本
+        if: runner.os == 'Linux'
+        run: |
+          set -eux
+
+          source="build/linux-container/${{ matrix.file }}"
+
+          if [ ! -s "$source" ]; then
+            echo "没有找到预期文件：$source"
+            find build/linux-container -type f -print
+            exit 1
+          fi
+
+          file "$source"
+          ldd "$source"
+
+          echo "===== GLIBC 符号版本 ====="
+
+          readelf --version-info "$source" \
+            | grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' \
+            | sort -Vu
+
+          max_glibc=$(
+            readelf --version-info "$source" \
+              | grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' \
+              | sort -Vu \
+              | tail -n 1
+          )
+
+          if [ -z "$max_glibc" ]; then
+            echo "无法读取 GLIBC 符号版本"
+            exit 1
+          fi
+
+          echo "最高 GLIBC 符号版本：$max_glibc"
+
+          if ! dpkg --compare-versions \
+              "${max_glibc#GLIBC_}" le "2.31"; then
+            echo "错误：原生库引用了高于 GLIBC 2.31 的符号"
+            exit 1
+          fi
+
       - name: 整理 Linux 原生库
         if: runner.os == 'Linux'
         run: |
           set -eux
 
-          source="build/native/${{ matrix.file }}"
+          source="build/linux-container/${{ matrix.file }}"
           destination="native/${{ matrix.platform }}/${{ matrix.file }}"
 
           if [ ! -s "$source" ]; then
             echo "没有找到预期文件：$source"
-            find build/native -type f -print
+            find build/linux-container -type f -print
             exit 1
           fi
 
@@ -123,7 +174,6 @@ jobs:
           cp "$source" "$destination"
           test -s "$destination"
 
-      # 上传整个 native 目录，保留平台子目录。
       - name: 上传原生库
         uses: actions/upload-artifact@v4
         with:
@@ -147,7 +197,6 @@ jobs:
           java-version: "17"
           cache: maven
 
-      # 将各平台原生库合并到 JAR 资源目录。
       - name: 下载原生库
         uses: actions/download-artifact@v4
         with:
@@ -159,6 +208,7 @@ jobs:
         shell: bash
         run: |
           set -eux
+
           find src/main/resources/native -type f -print
 
           test -s src/main/resources/native/windows-x86_64/wirehairjni.dll
@@ -183,8 +233,6 @@ jobs:
             'native/linux-x86_64/libwirehairjni.so' \
             target/jar-contents.txt
 
-
-      # 检查三个 JAR 是否都已生成
       - name: 检查构建产物
         shell: bash
         run: |
@@ -196,7 +244,6 @@ jobs:
           test -s target/wirehair-jni-1.0.0-sources.jar
           test -s target/wirehair-jni-1.0.0-javadoc.jar
 
-      # 一次上传主 JAR、源码 JAR 和 Javadoc JAR
       - name: 上传最终 JAR
         uses: actions/upload-artifact@v4
         with:
