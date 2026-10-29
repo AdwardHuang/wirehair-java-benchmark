@@ -35,13 +35,11 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # 不安装 docker.io，避免与 containerd.io 冲突
       - name: 安装 Linux 构建工具
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake ninja-build
-
           docker --version
           docker info
 
@@ -57,7 +55,6 @@ jobs:
             -A x64 `
             -DWIREHAIR_SOURCE_DIR="$PWD/wirehair-src"
 
-      # 在 Ubuntu 20.04 容器内编译，使用独立目录避免 CMakeCache 冲突
       - name: 配置并编译 Linux 原生工程
         if: runner.os == 'Linux'
         run: |
@@ -73,13 +70,22 @@ jobs:
               apt-get update
               apt-get install -y \
                 build-essential \
-                cmake \
                 ninja-build \
                 python3-pip \
                 binutils \
-                file
+                file \
+                openjdk-17-jdk
 
               python3 -m pip install "cmake==3.31.6"
+
+              export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+              export PATH="$JAVA_HOME/bin:$PATH"
+
+              test -f "$JAVA_HOME/include/jni.h"
+              test -f "$JAVA_HOME/include/linux/jni_md.h"
+
+              java -version
+              javac -version
 
               echo "===== glibc version ====="
               ldd --version
@@ -88,6 +94,7 @@ jobs:
               cmake -S src/main/cpp -B build/linux-container \
                 -G Ninja \
                 -DCMAKE_BUILD_TYPE=Release \
+                -DJAVA_HOME="$JAVA_HOME" \
                 -DWIREHAIR_SOURCE_DIR=/workspace/wirehair-src
 
               cmake --build build/linux-container --parallel
@@ -180,7 +187,6 @@ jobs:
           cp "$source" "$destination"
           test -s "$destination"
 
-      # 上传整个 native 目录，保留平台子目录
       - name: 上传原生库
         uses: actions/upload-artifact@v4
         with:
@@ -204,7 +210,6 @@ jobs:
           java-version: "17"
           cache: maven
 
-      # 将各平台原生库合并到 JAR 资源目录
       - name: 下载原生库
         uses: actions/download-artifact@v4
         with:
@@ -241,7 +246,6 @@ jobs:
             'native/linux-x86_64/libwirehairjni.so' \
             target/jar-contents.txt
 
-      # 检查三个 JAR 是否都已生成
       - name: 检查构建产物
         shell: bash
         run: |
@@ -253,7 +257,6 @@ jobs:
           test -s target/wirehair-jni-1.0.0-sources.jar
           test -s target/wirehair-jni-1.0.0-javadoc.jar
 
-      # 上传主 JAR、源码 JAR 和 Javadoc JAR
       - name: 上传最终 JAR
         uses: actions/upload-artifact@v4
         with:
