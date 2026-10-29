@@ -53,14 +53,20 @@ jobs:
         env:
           MESSAGE_MB: ${{ github.event.inputs.message_mb || '26' }}
           BLOCK_BYTES: ${{ github.event.inputs.block_bytes || '2500' }}
-          REPAIR_LIMIT: ${{ github.event.inputs.repair_limit || '2000' }}
           LOSS_EVERY: ${{ github.event.inputs.loss_every || '10' }}
         run: |
+          MESSAGE_BYTES=$((MESSAGE_MB * 1024 * 1024))
+
+          echo "消息大小：${MESSAGE_MB} MiB (${MESSAGE_BYTES} bytes)"
+          echo "编码块大小：${BLOCK_BYTES} bytes"
+          echo "丢包间隔：${LOSS_EVERY}"
+
           java -Djava.library.path="${GITHUB_WORKSPACE}/build/native" \
             -Dwirehairjni.path="${GITHUB_WORKSPACE}/build/native/libwirehairjni.so" \
             -cp target/wirehair-jni-1.0.0.jar \
             com.hrz.wirehairbench.Benchmark \
-            "$MESSAGE_MB" "$BLOCK_BYTES" "$REPAIR_LIMIT" "$LOSS_EVERY"
+            "$MESSAGE_BYTES" "$BLOCK_BYTES" "$LOSS_EVERY"
+
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
