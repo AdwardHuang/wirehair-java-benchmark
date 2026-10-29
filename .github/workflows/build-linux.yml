@@ -42,7 +42,7 @@ jobs:
         run: git clone --depth 1 https://github.com/catid/wirehair.git wirehair-src
       - name: Configure native build
         run: >-
-          cmake -S . -B build/native -G Ninja
+          cmake -S src/main/cpp -B build/native -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DWIREHAIR_SOURCE_DIR="${GITHUB_WORKSPACE}/wirehair-src"
       - name: Build native JNI
