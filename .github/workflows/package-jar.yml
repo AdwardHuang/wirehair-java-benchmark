@@ -35,12 +35,6 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: 安装 Linux 构建工具
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build
-
       - name: 下载官方 Wirehair 源码
         run: git clone --depth 1 https://github.com/catid/wirehair.git wirehair-src
 
@@ -61,8 +55,32 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DWIREHAIR_SOURCE_DIR="${GITHUB_WORKSPACE}/wirehair-src"
 
-      - name: 编译 JNI 原生库
+      - name: 编译 Windows JNI 原生库
+        if: runner.os == 'Windows'
         run: cmake --build build/native --config Release --parallel
+
+      - name: 在 Ubuntu 20.04 容器中编译 Linux JNI 原生库
+        if: runner.os == 'Linux'
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            ubuntu:20.04 \
+            bash -euxc '
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y \
+                build-essential cmake ninja-build
+
+              ldd --version
+              getconf GNU_LIBC_VERSION
+
+              cmake -S src/main/cpp -B build/native \
+                -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DWIREHAIR_SOURCE_DIR=/workspace/wirehair-src
+
+              cmake --build build/native --parallel
+            '
 
       - name: 整理 Windows 原生库
         if: runner.os == 'Windows'
